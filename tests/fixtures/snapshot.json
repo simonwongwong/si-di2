@@ -1,0 +1,142 @@
+{
+ "read_at": "2026-11-08T00:14:24+00:00",
+ "interface": {
+  "model": "SM-BCR2",
+  "bus_slot": 25,
+  "firmware": "3.0.1"
+ },
+ "units": [
+  {
+   "slot": 0,
+   "responding": true,
+   "model": "BT-DN110",
+   "firmware": "4.5.0.0",
+   "serial": "000000000001",
+   "kind": "battery",
+   "settings": {
+    "charge_percent": 30,
+    "multi_shift_gear_limit": "unlimited",
+    "multi_shift_gear_limit_code": 255,
+    "raw_limit": "ff ff ff ff"
+   }
+  },
+  {
+   "slot": 4,
+   "responding": true,
+   "model": "RD-R8050-GS",
+   "firmware": "3.3.0.0",
+   "serial": "000000000002",
+   "kind": "rear_derailleur",
+   "settings": {
+    "gear": "3 of 11",
+    "cassette": "11-28",
+    "cassette_code": 3,
+    "multi_shift_speed": "normal",
+    "multi_shift_speed_code": 3,
+    "gear_position_control": "on",
+    "gear_position_control_raw": "01 02 09 02"
+   }
+  },
+  {
+   "slot": 11,
+   "responding": true,
+   "model": "FD-R8050",
+   "firmware": "3.2.1.0",
+   "serial": "000000000003",
+   "kind": "front_derailleur",
+   "settings": {
+    "gear": "2 of 2",
+    "chainrings": "52-36",
+    "chainrings_code": 5,
+    "synchro_shift_speed": "normal",
+    "synchro_shift_speed_code": 0,
+    "synchro mode 1 up": {
+     "type": "semi-synchronized",
+     "rd_steps": 2,
+     "raw": "00 01 fe 02"
+    },
+    "synchro mode 1 down": {
+     "type": "semi-synchronized",
+     "rd_steps": 2,
+     "raw": "01 02 fe 02"
+    },
+    "synchro mode 2 up": {
+     "type": "synchronized",
+     "rd_shift_point": 7,
+     "rd_target_gear": 5,
+     "raw": "10 01 07 05"
+    },
+    "synchro mode 2 down": {
+     "type": "synchronized",
+     "rd_shift_point": 2,
+     "rd_target_gear": 4,
+     "raw": "11 02 02 04"
+    }
+   }
+  },
+  {
+   "slot": 13,
+   "responding": true,
+   "model": "EW-RS910",
+   "firmware": "3.1.2.0",
+   "serial": "000000000004",
+   "kind": "junction"
+  },
+  {
+   "slot": 17,
+   "responding": true,
+   "model": "EW-WU111",
+   "firmware": "4.6.0.0",
+   "serial": "000000000005",
+   "kind": "wireless",
+   "settings": {
+    "mode": "ANT + Bluetooth LE",
+    "ble_name": "EWWU11\ufffd1"
+   }
+  },
+  {
+   "slot": 19,
+   "responding": true,
+   "model": "ST-R8070-L",
+   "firmware": "3.3.0.0",
+   "serial": "000000000006",
+   "kind": "shifter",
+   "settings": {
+    "X": "front shift up",
+    "Y": "front shift down",
+    "sprinter": "unassigned",
+    "A": "D-FLY ch.1",
+    "codes": {
+     "X": 0,
+     "Y": 1,
+     "sprinter": 15,
+     "A": 10
+    },
+    "raw": "01 fa ff ff"
+   }
+  },
+  {
+   "slot": 27,
+   "responding": true,
+   "model": "ST-R8070-R",
+   "firmware": "3.3.0.0",
+   "serial": "000000000007",
+   "kind": "shifter",
+   "settings": {
+    "X": "rear shift down",
+    "Y": "rear shift up",
+    "sprinter": "unassigned",
+    "A": "D-FLY ch.2",
+    "codes": {
+     "X": 3,
+     "Y": 2,
+     "sprinter": 15,
+     "A": 11
+    },
+    "raw": "32 fb ff ff"
+   }
+  }
+ ],
+ "battery_percent": 30,
+ "duration_s": 5.1
+}

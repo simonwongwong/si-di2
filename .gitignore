@@ -1,0 +1,9 @@
+__pycache__/
+*.egg-info/
+.venv/
+# Shimano's binaries and anything extracted from them stay out of the repo.
+*.fw
+*.i51
+*.exe
+*.msi
+*.zip

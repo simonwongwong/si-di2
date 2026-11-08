@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Di2 Bike</title>
+<style>
+  :root {
+    --bg: #f5f5f2; --panel: #ffffff; --ink: #1c1d1f; --muted: #6b6e73; --line: #e3e3de;
+    --accent: #0b6bcb; --front: #0b6bcb; --rear: #1f8a5b; --dfly: #7a4fd1; --off: #9a9da2;
+    --warn: #b42318; --ok: #1f8a5b; --chip: #f0f0ec; --shadow: 0 1px 2px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121315; --panel: #1b1d20; --ink: #ececea; --muted: #9a9ea5; --line: #2c2f33;
+      --accent: #5aa2ee; --front: #5aa2ee; --rear: #4cc38a; --dfly: #a88bf0; --off: #6c7076;
+      --warn: #f97066; --ok: #4cc38a; --chip: #25282c; --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121315; --panel: #1b1d20; --ink: #ececea; --muted: #9a9ea5; --line: #2c2f33;
+    --accent: #5aa2ee; --front: #5aa2ee; --rear: #4cc38a; --dfly: #a88bf0; --off: #6c7076;
+    --warn: #f97066; --ok: #4cc38a; --chip: #25282c; --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 20px 16px 8px; max-width: 1100px; margin: 0 auto;
+           display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 13px; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 9px 16px; cursor: pointer;
+           background: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .55; cursor: default; }
+  #progress { max-width: 1100px; margin: 0 auto; padding: 0 16px; color: var(--muted); font-size: 13px;
+              min-height: 20px; }
+  #progress.error { color: var(--warn); }
+  main { max-width: 1100px; margin: 0 auto; padding: 8px 16px 40px;
+         display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px;
+          box-shadow: var(--shadow); min-width: 0; }
+  .card.wide { grid-column: 1 / -1; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+             margin: 0 0 12px; font-weight: 600; }
+  .big { font-size: 44px; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+  .bar { height: 10px; border-radius: 6px; background: var(--chip); overflow: hidden; margin-top: 12px; }
+  .bar > div { height: 100%; border-radius: 6px; background: var(--ok); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; font-weight: 500; }
+  .chip { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+          background: var(--chip); }
+  .chip.front { color: var(--front); } .chip.rear { color: var(--rear); }
+  .chip.dfly { color: var(--dfly); } .chip.off { color: var(--off); }
+  .chip.ok { color: var(--ok); } .chip.warn { color: var(--warn); }
+  .levers { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 20px; }
+  .lever h3 { margin: 0 0 8px; font-size: 14px; }
+  .lever .row { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0;
+                border-top: 1px solid var(--line); font-size: 14px; }
+  .lever .row span:first-child { color: var(--muted); }
+  .lever .chip { white-space: nowrap; align-self: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12.5px; border-top: 0; }
+  td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  .tablewrap { overflow-x: auto; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .mode h3 { margin: 0 0 4px; font-size: 14px; }
+  .mode p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+  .gears { display: grid; grid-template-columns: repeat(11, 1fr); gap: 3px; margin: 4px 0 10px; }
+  .gears div { text-align: center; font-size: 11px; padding: 5px 0; border-radius: 5px; background: var(--chip);
+               color: var(--muted); }
+  .gears div.cp { background: var(--accent); color: #fff; font-weight: 700; }
+  .gears div.tgt { outline: 2px solid var(--accent); outline-offset: -2px; color: var(--ink); font-weight: 700; }
+  .legend { font-size: 12px; color: var(--muted); }
+  svg text { fill: var(--muted); font-size: 10px; }
+  .empty { color: var(--muted); }
+  .controls { display: flex; gap: 8px; align-items: center; }
+  select.edit { font: inherit; font-size: 13px; padding: 3px 6px; border-radius: 7px; border: 1px solid var(--line);
+                background: var(--panel); color: var(--ink); max-width: 100%; }
+  select.edit.changed { border-color: var(--accent); outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+  .pending { position: sticky; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 16px;
+             display: flex; justify-content: center; z-index: 5; box-shadow: 0 -4px 14px rgba(0,0,0,.06); }
+  .pending > div { max-width: 1100px; width: 100%; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+  .changes { margin: 0 0 12px; padding-left: 18px; font-size: 14px; }
+  .changes li { margin: 3px 0; }
+  .note { font-size: 13px; color: var(--muted); }
+  .bad { color: var(--warn); font-weight: 600; } .good { color: var(--ok); font-weight: 600; }
+  .adjust .gears div { padding: 8px 0; font-size: 12px; }
+  .adjust .gears div.now { background: var(--rear); color: #fff; font-weight: 700; }
+  .stepper { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 10px 0 14px; }
+  .stepper .val { font-size: 30px; font-weight: 700; min-width: 70px; text-align: center; }
+  .stepper button { min-width: 44px; font-size: 18px; }
+  .dialog.wide { max-width: 560px; }
+  .row2 { display: flex; justify-content: space-between; gap: 10px; margin: 6px 0; }
+  ol.check { margin: 0 0 12px; padding-left: 20px; font-size: 14px; } ol.check li { margin: 4px 0; }
+  button.secondary { background: var(--chip); color: var(--ink); }
+  button.danger { background: var(--warn); }
+  .banner { max-width: 1100px; margin: 4px auto 6px; padding: 0 16px; }
+  .banner div { border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--ink);
+                background: color-mix(in srgb, var(--accent) 9%, var(--panel)); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+  .banner b { color: var(--accent); }
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center;
+             justify-content: center; padding: 16px; z-index: 10; }
+  .dialog { background: var(--panel); color: var(--ink); border-radius: 14px; padding: 20px; max-width: 460px; width: 100%;
+            box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+  .dialog h3 { margin: 0 0 8px; font-size: 17px; }
+  .dialog p { margin: 0 0 12px; font-size: 14px; }
+  .dialog .log { font-size: 12.5px; color: var(--muted); min-height: 18px; margin-bottom: 14px; }
+  .dialog .actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .dialog label { font-size: 13px; color: var(--muted); }
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+             display: inline-block; vertical-align: -3px; margin-right: 8px; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+  .stat { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--chip); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; background: var(--off); }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.live { background: var(--accent); }
+  .stat b { display: block; font-size: 14px; } .stat span { color: var(--muted); font-size: 12.5px; }
+  .cardhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .cardhead h2 { margin: 0; }
+  button.ghost { background: transparent; color: var(--accent); padding: 4px 8px; font-weight: 600; }
+  details { font-size: 13px; }
+  details pre { overflow: auto; max-height: 420px; background: var(--chip); padding: 12px; border-radius: 8px; }
+  @media (max-width: 560px) { .modes { grid-template-columns: 1fr; } .big { font-size: 38px; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Di2</h1>
+    <div class="sub" id="subtitle">Not connected</div>
+  </div>
+  <div class="controls" id="controls"></div>
+</header>
+<div class="banner" id="banner" hidden></div>
+<div id="progress"></div>
+<main id="main"></main>
+<div id="pending"></div>
+<div id="dialog"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? '—').replace(/[&<>"]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const SPROCKETS = {
+  '11-25': [25,23,21,19,17,16,15,14,13,12,11], '11-28': [28,25,23,21,19,17,15,14,13,12,11],
+  '11-30': [30,27,24,21,19,17,15,14,13,12,11], '11-32': [32,28,25,22,20,18,16,14,13,12,11],
+  '11-34': [34,30,27,25,23,21,19,17,15,13,11], '12-25': [25,23,21,19,18,17,16,15,14,13,12],
+  '12-28': [28,25,23,21,19,17,16,15,14,13,12], '14-28': [28,25,23,21,20,19,18,17,16,15,14],
+};
+
+function fnClass(fn) {
+  if (!fn) return 'off';
+  if (fn.startsWith('front')) return 'front';
+  if (fn.startsWith('rear')) return 'rear';
+  if (fn.startsWith('D-FLY')) return 'dfly';
+  return 'off';
+}
+const gearOf = (s) => { const m = /^(\d+) of (\d+)$/.exec(s || ''); return m ? [+m[1], +m[2]] : null; };
+const byKind = (snap, kind) => snap.units.filter((u) => u.kind === kind);
+
+// Warnings follow E-Tube Project's wording (TextDlg299001_03_011103, TextDlg201002_03A/B).
+const WARN_CONNECTING = 'Do not remove or insert the battery or electric wires while units are being recognised. '
+  + 'If they have been removed or inserted, disconnect and connect again.';
+const WARN_CONNECTED = 'While a bicycle is connected, do not turn off the computer or remove the USB cable, '
+  + 'the SM-BCR2, electric wires or battery. When disconnecting, always use the Disconnect button.';
+
+let link = null;        // BCR2 status, only fetched while disconnected
+let lastState = null;
+
+function stat(level, title, detail) {
+  return `<div class="stat"><div class="dot ${level}"></div><div><b>${title}</b><span>${detail}</span></div></div>`;
+}
+
+function connectionCard(state) {
+  const snap = state.snapshot, phase = state.phase;
+  let items;
+  if (phase !== 'disconnected') {
+    if (phase === 'writing') { /* fall through to the connected view */ }
+    const since = state.connected_since ? new Date(state.connected_since * 1000).toLocaleTimeString() : '';
+    items = stat('live', phase === 'connecting' ? 'Connecting…' : phase === 'disconnecting' ? 'Disconnecting…' : 'Connected',
+                 phase === 'connected' || phase === 'reading' ? `since ${since}: shifting is paused` : 'do not unplug anything')
+          + stat('ok', 'BCR2', `bus slot ${esc(snap?.interface?.bus_slot)}`);
+  } else if (!link) {
+    items = stat('', 'Checking…', '');
+  } else {
+    items = (link.usb ? stat(link.responding === false ? 'warn' : 'ok', 'SM-BCR2 plugged in', link.responding === false ? 'on USB but not answering' : 'USB, firmware loaded')
+                      : stat('warn', 'SM-BCR2 not plugged in', link.error ? esc(link.error) : 'plug in its USB cable'))
+          + (!link.responding ? stat('', 'Bike', 'checked when you connect')
+             : link.bike_battery === 'detected' ? stat('ok', 'Plugged into the bike', 'bike battery detected')
+             : stat('warn', 'Not plugged into the bike', `bike battery ${esc(link.bike_battery)}`))
+          + (!link.responding ? stat('', 'Bus', 'idle unless a session is open')
+             : link.bus === 'idle' ? stat('ok', 'Not connected', 'BCR2 idle; safe to unplug')
+             : stat('warn', `BCR2 ${esc(link.bus)}`, `slot ${esc(link.bus_slot)}: a session may not have closed`));
+  }
+  const d = snap?.disconnect;
+  let rel;
+  if (!d) rel = stat('', 'Last disconnect', 'no record yet');
+  else {
+    const missing = d.units.filter((u) => !u.acked);
+    rel = d.master_released && !missing.length
+      ? stat('ok', 'Last disconnect verified', `battery + ${d.units.length} units released`)
+      : stat('warn', 'Last disconnect not verified',
+             (d.master_released ? '' : 'battery did not confirm; ')
+             + (missing.length ? 'no confirmation from ' + missing.map((u) => esc(u.model || 'slot ' + u.slot)).join(', ') : '')
+             + '. If shifting misbehaves, run di2 release.');
+  }
+  return `<section class="card wide"><div class="cardhead"><h2>Connection</h2>
+    ${phase === 'disconnected' ? '<button class="ghost" id="checklink">Check</button>' : ''}</div>
+    <div class="status">${items}${rel}</div></section>`;
+}
+
+// ---- settings editing (staged until Apply, like E-Tube's Customize screen)
+let staged = {};                       // "slot|key" -> value
+const unitAt = (slot) => lastState?.snapshot?.units.find((u) => u.slot === +slot);
+function shifterCodes(u) {
+  const st = u?.settings || {};
+  if (st.codes) return st.codes;
+  const r = (st.raw || '').split(' ').map((x) => parseInt(x, 16));
+  return r.length >= 2 ? {X: r[0] >> 4, Y: r[0] & 15, sprinter: r[1] >> 4, A: r[1] & 15} : {};
+}
+function currentCode(slot, key) {
+  const u = unitAt(slot), st = u?.settings || {};
+  if (key.startsWith('button.')) return shifterCodes(u)[key.split('.')[1]];
+  if (key === 'multi_shift_gear_limit' && st.multi_shift_gear_limit_code == null && st.raw_limit)
+    return parseInt(st.raw_limit.slice(0, 2), 16);
+  if (st[key + '_code'] !== undefined) return st[key + '_code'];
+  const m = /^semi_steps\.(\d)\.(up|down)$/.exec(key);
+  if (m) return st[`synchro mode ${m[1]} ${m[2]}`]?.rd_steps;
+  return undefined;
+}
+const editOpts = (slot, key) => lastState?.phase === 'connected' ? lastState.options?.[slot]?.[key] : null;
+function field(slot, key, label, cls = '') {
+  const o = editOpts(slot, key);
+  if (!o) return `<span class="chip ${cls}">${esc(label)}</span>`;
+  const k = `${slot}|${key}`, cur = currentCode(slot, key), val = k in staged ? staged[k] : cur;
+  return `<select class="edit ${k in staged ? 'changed' : ''}" data-k="${k}" aria-label="${esc(key)}">`
+    + Object.entries(o).map(([v, l]) => `<option value="${v}" ${+v === val ? 'selected' : ''}>${esc(l)}</option>`).join('')
+    + '</select>';
+}
+document.addEventListener('change', (e) => {
+  const k = e.target?.dataset?.k;
+  if (!k) return;
+  const [slot, key] = k.split('|'), v = +e.target.value;
+  if (v === currentCode(slot, key)) delete staged[k]; else staged[k] = v;
+  render(lastState);
+});
+const stagedList = () => Object.entries(staged).map(([k, value]) => {
+  const [slot, key] = k.split('|'); return {slot: +slot, key, value};
+});
+function labelFor(slot, key, value) {
+  return lastState.options?.[slot]?.[key]?.[value] ?? String(value);
+}
+function whatOf(c) {
+  const u = unitAt(c.slot);
+  return c.key.startsWith('button.') ? `${u?.model}: ${({X: 'lever X', Y: 'lever Y', A: 'hidden top button'})[c.key.split('.')[1]]}`
+    : c.key.startsWith('semi_steps.') ? `Shift mode ${c.key.split('.')[1]} ${c.key.split('.')[2]}: rear steps`
+    : ({multi_shift_speed: 'Multi-shift speed', multi_shift_gear_limit: 'Multi-shift gear limit',
+        synchro_shift_speed: 'Synchro shift speed'})[c.key] || c.key;
+}
+function describe(c) {
+  const what = whatOf(c);
+  const from = labelFor(c.slot, c.key, currentCode(c.slot, c.key));
+  return `${esc(what)}: ${esc(from)} → <b>${esc(labelFor(c.slot, c.key, c.value))}</b>${c.implied ? ' <span class="note">(required by the change above)</span>' : ''}`;
+}
+function pendingBar() {
+  const n = Object.keys(staged).length, el = $('#pending');
+  if (!n || lastState?.phase !== 'connected') { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="pending"><div><span><b>${n}</b> change${n === 1 ? '' : 's'} not yet applied</span>
+    <span class="controls"><button class="secondary" id="discard">Discard</button><button id="apply">Apply…</button></span></div></div>`;
+  $('#discard').onclick = async () => {
+    if (await confirmBox('Discard changes?', 'Do you want to reset all the changed settings?', 'Discard')) { staged = {}; render(lastState); }
+  };
+  $('#apply').onclick = reviewApply;
+}
+async function reviewApply() {
+  const res = await (await fetch('/api/check', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({changes: stagedList()})})).json();
+  const d = $('#dialog');
+  const blocked = res.errors.length > 0;
+  d.innerHTML = `<div class="overlay"><div class="dialog"><h3>Apply settings to the bike?</h3>
+    ${res.changes.length ? `<ul class="changes">${res.changes.map((c) => `<li>${describe(c)}</li>`).join('')}</ul>` : '<p>Nothing to change.</p>'}
+    ${res.warnings.map((w) => `<p class="bad">${esc(w)}. Are you sure you want to continue?</p>`).join('')}
+    ${res.errors.map((e) => `<p class="bad">${esc(e)}</p>`).join('')}
+    <p class="note">All current settings are backed up first. Each change is written and then read back to check it.
+      Keep the bike connected until this finishes.</p>
+    <div class="actions"><button class="secondary" id="nocommit">Cancel</button>
+      <button id="commit" ${blocked || !res.changes.length ? 'disabled' : ''}>Apply</button></div></div></div>`;
+  $('#nocommit').onclick = () => { d.innerHTML = ''; };
+  $('#commit').onclick = async () => {
+    d.innerHTML = '';
+    await fetch('/api/apply', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({changes: stagedList()})});
+    staged = {};
+    refresh();
+  };
+}
+let shownReport = null;
+function reportDialog(state) {
+  const r = state.apply_report;
+  if (!r || shownReport === r.at || state.phase !== 'connected') return false;
+  shownReport = r.at;
+  $('#dialog').innerHTML = `<div class="overlay"><div class="dialog">
+    <h3>${r.ok ? 'Settings applied' : 'Some settings did not apply'}</h3>
+    <ul class="changes">${r.items.map((c) => `<li><span class="${c.verified ? 'good' : 'bad'}">${c.verified ? '✓' : '✗'}</span>
+      ${esc(whatOf(c))}: <b>${esc(labelFor(c.slot, c.key, c.value))}</b>${c.verified ? '' : ` <span class="note">(not confirmed; read back ${esc(c.read_back)})</span>`}</li>`).join('')}</ul>
+    <p class="note">Backup of the previous settings: ${esc(r.backup)}</p>
+    <div class="actions"><span></span><button id="okreport">OK</button></div></div></div>`;
+  $('#okreport').onclick = () => { $('#dialog').innerHTML = ''; };
+  return true;
+}
+
+// ---- rear derailleur adjustment (E-Tube's procedure; the derailleur moves)
+async function adjust(action, delta = 0) {
+  await fetch('/api/adjust', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action, delta})});
+  refresh();
+}
+function adjustDialog(state) {
+  const a = state.adjust, d = $('#dialog');
+  const busy = !a || a.busy;
+  const rd = byKind(state.snapshot, 'rear_derailleur')[0]?.settings || {};
+  const cogs = SPROCKETS[rd.cassette] || [];
+  const power = a?.power ? (a.power.source === 'battery' ? `battery ${a.power.level} %` : 'powered by the SM-BCR2') : '';
+  let body;
+  if (!a || a.stage === 'preparing') {
+    body = `<h3><span class="spinner"></span>Preparing…</h3><p class="note">Reading the derailleur position and trim.</p>`;
+  } else if (a.stage === 'ready') {
+    body = `<h3>Rear derailleur adjustment</h3>
+      <ol class="check">
+        <li>Put the bike in a work stand so the rear wheel turns freely.</li>
+        <li>Turn the cranks forward whenever the derailleur shifts.
+            <b>Be careful not to get your hand caught in the gears.</b></li>
+        <li>Press Start: the derailleur moves to gear ${Math.min(5, a.max_gear)} (${cogs[Math.min(5, a.max_gear) - 1] ?? '?'}T).</li>
+      </ol>
+      <div class="row2 note"><span>Current trim: <b>${a.trim > 0 ? '+' : ''}${a.trim}</b> (range ±${a.trim_range})</span><span>${power}</span></div>
+      <div class="actions"><button class="secondary" id="adjcancel">Cancel</button>
+        <button id="adjstart" ${busy ? 'disabled' : ''}>${busy ? '<span class="spinner"></span>' : ''}Start</button></div>`;
+  } else {
+    const cells = (cogs.length ? cogs : Array.from({length: a.max_gear}, (_, i) => i + 1)).map((t, i) =>
+      `<div class="${i + 1 === a.gear ? 'now' : ''}" title="gear ${i + 1}">${t}</div>`).join('');
+    body = `<h3>Rear derailleur adjustment</h3>
+      <p class="note">Turn the cranks. Adjust until the chain runs quietly, without rubbing or trying to climb to the
+      next cog; then check a couple of gears either side.</p>
+      <div class="gears">${cells}</div>
+      <div class="row2"><button class="secondary" id="adjlarger" ${busy || a.gear <= 1 ? 'disabled' : ''}>← Larger cog</button>
+        <span class="note" style="align-self:center">gear ${a.gear} of ${a.max_gear}</span>
+        <button class="secondary" id="adjsmaller" ${busy || a.gear >= a.max_gear ? 'disabled' : ''}>Smaller cog →</button></div>
+      <div class="stepper"><button class="secondary" id="adjminus" ${busy || a.trim <= -a.trim_range ? 'disabled' : ''}>−</button>
+        <div class="val">${a.trim > 0 ? '+' : ''}${a.trim}</div>
+        <button class="secondary" id="adjplus" ${busy || a.trim >= a.trim_range ? 'disabled' : ''}>+</button></div>
+      <div class="row2 note"><span>Trim range ±${a.trim_range} · was ${a.original_trim > 0 ? '+' : ''}${a.original_trim}</span>
+        <span>${busy ? '<span class="spinner"></span>moving…' : power}</span></div>
+      <div class="actions"><button class="secondary" id="adjcancel" ${busy ? 'disabled' : ''}>Cancel (restore ${a.original_trim > 0 ? '+' : ''}${a.original_trim})</button>
+        <button id="adjdone" ${busy ? 'disabled' : ''}>Done</button></div>`;
+  }
+  d.innerHTML = `<div class="overlay"><div class="dialog wide adjust">${body}</div></div>`;
+  const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
+  on('adjstart', () => adjust('start'));
+  on('adjcancel', () => adjust('cancel'));
+  on('adjdone', () => adjust('finish'));
+  on('adjlarger', () => adjust('shift', -1));
+  on('adjsmaller', () => adjust('shift', +1));
+  on('adjminus', () => adjust('trim', -1));
+  on('adjplus', () => adjust('trim', +1));
+}
+let shownAdjust = null;
+function adjustResultDialog(state) {
+  const r = state.adjust_result;
+  const key = r && JSON.stringify(r);
+  if (!r || shownAdjust === key || state.phase !== 'connected') return false;
+  shownAdjust = key;
+  const msg = r.cancelled ? 'Adjustment cancelled. The previous trim is back and the derailleur is in normal mode.'
+    : r.ok ? `Done. Trim is now ${r.trim > 0 ? '+' : ''}${r.trim} (was ${r.original > 0 ? '+' : ''}${r.original}).`
+    : `Stopped: ${esc(r.error)}. The previous trim was restored and the derailleur returned to normal mode.`;
+  $('#dialog').innerHTML = `<div class="overlay"><div class="dialog"><h3>Rear derailleur</h3><p>${msg}</p>
+    <div class="actions"><span></span><button id="okadj">OK</button></div></div></div>`;
+  $('#okadj').onclick = () => { $('#dialog').innerHTML = ''; };
+  return true;
+}
+
+function batteryCard(snap) {
+  const pct = snap.battery_percent;
+  const bt = byKind(snap, 'battery')[0];
+  const color = pct == null ? 'var(--off)' : pct <= 20 ? 'var(--warn)' : 'var(--ok)';
+  return `<section class="card"><h2>Battery</h2>
+    <div class="big">${pct == null ? '—' : pct + '<span style="font-size:22px">%</span>'}</div>
+    <div class="bar"><div style="width:${pct ?? 0}%;background:${color}"></div></div>
+    <dl class="kv" style="margin-top:14px"><dt>Unit</dt><dd>${esc(bt?.model)}</dd>
+    <dt>Multi-shift limit</dt><dd>${bt ? field(bt.slot, 'multi_shift_gear_limit', bt.settings?.multi_shift_gear_limit) : '—'}</dd></dl></section>`;
+}
+
+function drivetrainCard(snap) {
+  const fd = byKind(snap, 'front_derailleur')[0]?.settings || {};
+  const rd = byKind(snap, 'rear_derailleur')[0]?.settings || {};
+  const rings = (fd.chainrings || '').split('-').map(Number).filter(Boolean).sort((a, b) => a - b);
+  const cogs = SPROCKETS[rd.cassette] || [];
+  const fg = gearOf(fd.gear), rg = gearOf(rd.gear);
+  const ring = fg && rings.length ? rings[fg[0] - 1] : null;
+  const cog = rg && cogs.length ? cogs[rg[0] - 1] : null;
+  const max = Math.max(...rings, ...cogs, 1);
+  const H = 120, W = 330, bw = 16;
+  let x = 6, bars = '';
+  rings.forEach((t, i) => {
+    const h = t / max * (H - 20), on = fg && fg[0] === i + 1;
+    bars += `<rect x="${x}" y="${H - 14 - h}" width="${bw + 6}" height="${h}" rx="4" fill="${on ? 'var(--front)' : 'var(--chip)'}"/>
+             <text x="${x + (bw + 6) / 2}" y="${H}" text-anchor="middle">${t}</text>`;
+    x += bw + 12;
+  });
+  x += 14;
+  cogs.forEach((t, i) => {
+    const h = t / max * (H - 20), on = rg && rg[0] === i + 1;
+    bars += `<rect x="${x}" y="${H - 14 - h}" width="${bw}" height="${h}" rx="3" fill="${on ? 'var(--rear)' : 'var(--chip)'}"/>
+             <text x="${x + bw / 2}" y="${H}" text-anchor="middle">${t}</text>`;
+    x += bw + 6;
+  });
+  const ratio = ring && cog ? (ring / cog).toFixed(2) : null;
+  return `<section class="card"><h2>Drivetrain</h2>
+    <svg viewBox="0 0 ${Math.max(x, W)} ${H + 2}" width="100%" role="img" aria-label="chainrings and cassette">${bars}</svg>
+    <dl class="kv" style="margin-top:10px">
+      <dt>Now in</dt><dd>${ring && cog ? `${ring} × ${cog} &nbsp;<span class="sub">ratio ${ratio}</span>` : '—'}</dd>
+      <dt>Chainrings</dt><dd>${esc(fd.chainrings)}</dd><dt>Cassette</dt><dd>${esc(rd.cassette)}</dd>
+    </dl>${lastState?.phase === 'connected' && byKind(snap, 'rear_derailleur')[0]?.responding
+      ? '<button class="secondary" id="adjrd" style="margin-top:14px">Rear derailleur adjustment…</button>' : ''}</section>`;
+}
+
+function synchroRow(entry, cogs, label, slot, editKey) {
+  if (!entry || !entry.type) return `<div class="legend">${label}: no data</div>`;
+  if (entry.type === 'semi-synchronized')
+    return `<div class="legend">${label}: rear moves ${editKey && editOpts(slot, editKey) ? field(slot, editKey, entry.rd_steps)
+      : `<b>${entry.rd_steps}</b>`} step${entry.rd_steps === 1 ? '' : 's'} with the front shift</div>`;
+  const cells = (cogs.length ? cogs : Array.from({length: 11}, (_, i) => i + 1)).map((t, i) => {
+    const g = i + 1, cls = g === entry.rd_shift_point ? 'cp' : g === entry.rd_target_gear ? 'tgt' : '';
+    return `<div class="${cls}" title="rear gear ${g}">${t}</div>`;
+  }).join('');
+  return `<div class="legend">${label}: front shifts at rear gear <b>${entry.rd_shift_point}</b>, rear goes to <b>${entry.rd_target_gear}</b></div>
+          <div class="gears">${cells}</div>`;
+}
+
+function shiftingCard(snap) {
+  const fdu = byKind(snap, 'front_derailleur')[0], rdu = byKind(snap, 'rear_derailleur')[0];
+  const fd = fdu?.settings || {}, rd = rdu?.settings || {};
+  const cogs = SPROCKETS[rd.cassette] || [];
+  const mode = (n) => {
+    const up = fd[`synchro mode ${n} up`], down = fd[`synchro mode ${n} down`];
+    const type = up?.type ? up.type.replace('-', ' ') : 'unknown';
+    return `<div class="mode"><h3>Shift mode ${n}</h3><p>${esc(type)}</p>
+      ${synchroRow(up, cogs, 'Up (inner → outer)', fdu?.slot, `semi_steps.${n}.up`)}${synchroRow(down, cogs, 'Down (outer → inner)', fdu?.slot, `semi_steps.${n}.down`)}</div>`;
+  };
+  return `<section class="card wide"><h2>Shifting</h2>
+    <div class="modes">${mode(1)}${mode(2)}</div>
+    <div class="legend" style="margin:4px 0 12px">Cassette shown largest cog first. Filled = front shift point, outlined = rear target.</div>
+    <dl class="kv"><dt>Synchro shift speed</dt><dd>${fdu ? field(fdu.slot, 'synchro_shift_speed', fd.synchro_shift_speed) : '—'}</dd>
+      <dt>Multi-shift speed</dt><dd>${rdu ? field(rdu.slot, 'multi_shift_speed', rd.multi_shift_speed) : '—'}</dd>
+      <dt>Gear position control</dt><dd>${esc(rd.gear_position_control)}</dd></dl></section>`;
+}
+
+function shiftersCard(snap) {
+  const levers = byKind(snap, 'shifter').sort((a, b) => (a.model || '').endsWith('-L') ? -1 : 1);
+  const names = {X: 'Lever X', Y: 'Lever Y', A: 'Hidden top button (A)', sprinter: 'Sprinter / remote'};
+  const lever = (u) => {
+    const st = u.settings || {};
+    const rows = Object.entries(names).map(([k, label]) =>
+      `<div class="row"><span>${label}</span>${k === 'sprinter' ? `<span class="chip ${fnClass(st[k])}">${esc(st[k])}</span>`
+        : field(u.slot, 'button.' + k, st[k], fnClass(st[k]))}</div>`).join('');
+    return `<div class="lever"><h3>${esc(u.model)}</h3>${u.responding ? rows : '<div class="empty">not responding</div>'}</div>`;
+  };
+  return `<section class="card"><h2>Shifter buttons</h2>
+    <div class="levers">${levers.map(lever).join('') || '<div class="empty">no shifters</div>'}</div></section>`;
+}
+
+function unitsCard(snap) {
+  const KIND = {battery: 'Battery', shifter: 'Shifter', front_derailleur: 'Front derailleur',
+                rear_derailleur: 'Rear derailleur', junction: 'Junction A', wireless: 'Wireless unit', unknown: '?'};
+  const rows = snap.units.map((u) => `<tr><td>${KIND[u.kind] || u.kind}</td><td>${esc(u.model)}</td>
+      <td>${u.slot}</td><td class="mono">${esc(u.firmware)}</td><td class="mono">${esc(u.serial)}</td>
+      <td>${u.responding ? '<span class="chip ok">ok</span>' : '<span class="chip warn">registered, not answering</span>'}</td></tr>`).join('');
+  const i = snap.interface || {};
+  return `<section class="card wide"><h2>Components</h2><div class="tablewrap"><table>
+    <thead><tr><th>Part</th><th>Model</th><th>Bus slot</th><th>Firmware</th><th>Serial</th><th>Status</th></tr></thead>
+    <tbody>${rows}<tr><td>PC link</td><td>${esc(i.model)}</td><td>${esc(i.bus_slot)}</td><td class="mono">${esc(i.firmware)}</td><td></td><td><span class="chip ok">connected</span></td></tr></tbody>
+    </table></div></section>`;
+}
+
+function controls(phase) {
+  if (phase === 'disconnected') return '<button id="connect">Connect</button>';
+  if (phase === 'connecting') return '<button class="secondary" id="cancel">Cancel</button>';
+  if (phase === 'disconnecting') return '<button class="secondary" disabled><span class="spinner"></span>Disconnecting…</button>';
+  if (phase === 'adjusting') return '<button class="secondary" disabled>Adjusting the rear derailleur…</button>';
+  const busy = phase === 'reading' || phase === 'writing';
+  return `<button class="secondary" id="refresh" ${busy ? 'disabled' : ''}>${busy ? `<span class="spinner"></span>${phase === 'writing' ? 'Writing…' : 'Reading…'}` : 'Refresh'}</button>
+          <button id="disconnect" ${busy ? 'disabled' : ''}>Disconnect</button>`;
+}
+
+let shownProhibit = false;
+function dialogs(state) {
+  const d = $('#dialog');
+  if (state.phase === 'connecting') {
+    d.innerHTML = `<div class="overlay"><div class="dialog"><h3><span class="spinner"></span>Recognising units</h3>
+      <p>${WARN_CONNECTING}</p><div class="log">${esc(state.log.at(-1) || 'starting…')}</div>
+      <div class="actions"><span></span><button class="secondary" id="cancel2">Cancel</button></div></div></div>`;
+    $('#cancel2').onclick = () => act('cancel');
+    return;
+  }
+  if (state.phase === 'connected' && !shownProhibit && !hidePref()) {
+    shownProhibit = true;
+    d.innerHTML = `<div class="overlay"><div class="dialog"><h3>Connected</h3><p>${WARN_CONNECTED}</p>
+      <p>Charging was stopped: the SM-BCR2 doesn't charge the bike during a session. After disconnecting,
+      unplug and replug its USB cable to resume charging.</p>
+      <p>Shifting is paused while connected. The connection closes by itself after
+      ${Math.round(state.idle_disconnect_s / 60)} minutes without activity.</p>
+      <div class="actions"><label><input type="checkbox" id="nomore"> Don't show again</label>
+      <button id="okdlg">OK</button></div></div></div>`;
+    $('#okdlg').onclick = () => { if ($('#nomore').checked) setHidePref(); d.innerHTML = ''; };
+    return;
+  }
+  if (state.phase === 'disconnected') shownProhibit = false;
+  // Close the connecting overlay once we're past it (other dialogs manage themselves).
+  if (d.querySelector('#cancel2')) d.innerHTML = '';
+}
+const hidePref = () => { try { return localStorage.getItem('di2.hideConnectedDialog') === '1'; } catch (e) { return false; } };
+const setHidePref = () => { try { localStorage.setItem('di2.hideConnectedDialog', '1'); } catch (e) {} };
+
+function render(state) {
+  const snap = state.snapshot, phase = state.phase;
+  $('#controls').innerHTML = controls(phase);
+  const bind = (id, action) => { const el = $('#' + id); if (el) el.onclick = () => act(action); };
+  bind('connect', 'connect'); bind('cancel', 'cancel'); bind('refresh', 'refresh'); bind('disconnect', 'disconnect');
+
+  const banner = $('#banner');
+  banner.hidden = !['connected', 'reading', 'writing', 'adjusting'].includes(phase);
+  banner.innerHTML = `<div><b>Connected: shifting and charging are paused.</b> ${WARN_CONNECTED}</div>`;
+
+  const p = $('#progress');
+  p.className = state.error ? 'error' : '';
+  p.textContent = state.error ? `Error: ${state.error}. The bike was disconnected.` : (phase === 'reading' || phase === 'writing') ? (state.log.at(-1) || '') : '';
+
+  $('#subtitle').textContent = phase !== 'disconnected' ? 'Connected through the SM-BCR2'
+    : snap ? `Not connected · last read ${new Date(snap.read_at).toLocaleString()}` : 'Not connected';
+  const cards = snap ? batteryCard(snap) + drivetrainCard(snap) + shiftersCard(snap) + shiftingCard(snap) + unitsCard(snap)
+    + `<section class="card wide"><details><summary>Raw snapshot</summary><pre>${esc(JSON.stringify(snap, null, 2))}</pre></details></section>`
+    : '<div class="card wide empty">Press <b>Connect</b> to read the bike through the SM-BCR2.</div>';
+  $('#main').innerHTML = connectionCard(state) + cards;
+  const c = $('#checklink'); if (c) c.onclick = checkLink;
+  if (phase === 'disconnected') staged = {};
+  pendingBar();
+  const a = $('#adjrd'); if (a) a.onclick = () => adjust('begin');
+  if (phase === 'adjusting') adjustDialog(state);
+  else if (!reportDialog(state) && !adjustResultDialog(state)) dialogs(state);
+}
+
+function confirmBox(title, text, okLabel = 'OK') {
+  return new Promise((resolve) => {
+    const d = $('#dialog');
+    d.innerHTML = `<div class="overlay"><div class="dialog"><h3>${esc(title)}</h3>
+      ${text ? `<p>${esc(text)}</p>` : ''}
+      <div class="actions"><button class="secondary" id="cfno">Cancel</button><button id="cfyes">${esc(okLabel)}</button></div></div></div>`;
+    const done = (v) => { d.innerHTML = ''; resolve(v); };
+    $('#cfno').onclick = () => done(false);
+    $('#cfyes').onclick = () => done(true);
+    $('#cfyes').focus();
+  });
+}
+
+async function act(action) {
+  if (action === 'disconnect' && !(await confirmBox('Disconnect from the bike?',
+      Object.keys(staged).length ? 'Customized settings exist. If disconnected, the settings will not be applied.'
+        : 'Shifting resumes once every unit is released.', 'Disconnect'))) return;
+  await fetch('/api/' + action, {method: 'POST'});
+  refresh();
+}
+
+async function checkLink() {
+  link = null;
+  if (lastState) render(lastState);
+  try { link = await (await fetch('/api/link')).json(); } catch (e) { link = {usb: false, error: 'server unreachable'}; }
+  if (lastState) render(lastState);
+}
+
+let timer = null, lastText = null;
+async function refresh() {
+  try {
+    const text = await (await fetch('/api/state')).text();
+    const state = JSON.parse(text);
+    const nowDisconnected = state.phase === 'disconnected' && lastState && lastState.phase !== 'disconnected';
+    const changed = text !== lastText;     // re-rendering would close an open dropdown
+    lastText = text;
+    lastState = state;
+    if (changed) render(state);
+    if (nowDisconnected) checkLink();
+    clearTimeout(timer);
+    timer = setTimeout(refresh, state.phase === 'disconnected' ? 10000 : 1000);
+  } catch (e) {
+    $('#progress').textContent = 'Lost contact with the di2 server.';
+    timer = setTimeout(refresh, 5000);
+  }
+}
+
+// Same rule as E-Tube: don't walk away from a connected bike.
+window.addEventListener('beforeunload', (e) => {
+  if (lastState && lastState.phase !== 'disconnected') { e.preventDefault(); e.returnValue = ''; }
+});
+
+refresh().then(checkLink);
+</script>
+</body>
+</html>

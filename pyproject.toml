@@ -1,0 +1,23 @@
+[project]
+name = "di2"
+version = "0.0.1"
+description = "Talk to Shimano Di2 (E-Tube) bikes from Linux through an SM-BCR2"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["pyserial>=3.5"]
+
+[project.optional-dependencies]
+firmware = ["olefile>=0.46"]
+
+[project.scripts]
+di2 = "di2.__main__:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["di2"]
+
+[tool.setuptools.package-data]
+di2 = ["web/*.html"]

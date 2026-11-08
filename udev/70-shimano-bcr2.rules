@@ -1,0 +1,8 @@
+# Shimano SM-BCR2 Di2 charger/PC link (TI TUSB3410 inside).
+# ti_usb_3410_5052 doesn't know Shimano's ID: add it, and the driver uploads
+# /lib/firmware/ti_usb-v1e44-p7220.fw (Shimano's umpf3410.i51) to the chip.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="1e44", ATTR{idProduct}=="7220", \
+  RUN+="/sbin/modprobe ti_usb_3410_5052", \
+  RUN+="/bin/sh -c 'echo 1e44 7220 > /sys/bus/usb-serial/drivers/ti_usb_3410_5052_1/new_id || true'"
+# The resulting serial port: readable by members of group plugdev, stable name /dev/di2.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1e44", ATTRS{idProduct}=="7220", GROUP="plugdev", MODE="0660", SYMLINK+="di2"
