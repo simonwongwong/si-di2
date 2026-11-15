@@ -94,6 +94,15 @@
   .dialog.wide { max-width: 560px; }
   .row2 { display: flex; justify-content: space-between; gap: 10px; margin: 6px 0; }
   ol.check { margin: 0 0 12px; padding-left: 20px; font-size: 14px; } ol.check li { margin: 4px 0; }
+  .presets { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .presets h3 { font-size: 13px; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
+  .preset { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .preset .pname { flex: 1; } .preset .pval { font-weight: 700; min-width: 34px; text-align: right; }
+  .preset button { padding: 4px 10px; font-size: 13px; }
+  .preset .cur { color: var(--ok); font-size: 12px; }
+  .savepreset { display: flex; gap: 8px; margin-top: 8px; }
+  .savepreset input { flex: 1; min-width: 0; font: inherit; padding: 5px 8px; border-radius: 8px;
+                      border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
   button.secondary { background: var(--chip); color: var(--ink); }
   button.danger { background: var(--warn); }
   .banner { max-width: 1100px; margin: 4px auto 6px; padding: 0 16px; }
@@ -311,9 +320,9 @@ function reportDialog(state) {
 }
 
 // ---- rear derailleur adjustment (E-Tube's procedure; the derailleur moves)
-async function adjust(action, delta = 0) {
+async function adjust(action, delta = 0, value = 0) {
   await fetch('/api/adjust', {method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({action, delta})});
+    body: JSON.stringify({action, delta, value})});
   refresh();
 }
 function adjustDialog(state) {
@@ -323,7 +332,10 @@ function adjustDialog(state) {
   const cogs = SPROCKETS[rd.cassette] || [];
   const power = a?.power ? (a.power.source === 'battery' ? `battery ${a.power.level} %` : 'powered by the SM-BCR2') : '';
   let body;
-  if (!a || a.stage === 'preparing') {
+  if (a?.stage === 'preset') {
+    body = `<h3><span class="spinner"></span>Applying preset…</h3><p class="note">Setting the rear trim and
+      confirming it with the derailleur. Pedal gently.</p>`;
+  } else if (!a || a.stage === 'preparing') {
     body = `<h3><span class="spinner"></span>Preparing…</h3><p class="note">Reading the derailleur position and trim.</p>`;
   } else if (a.stage === 'ready') {
     body = `<h3>Rear derailleur adjustment</h3>
@@ -349,6 +361,12 @@ function adjustDialog(state) {
       <div class="stepper"><button class="secondary" id="adjminus" ${busy || a.trim <= -a.trim_range ? 'disabled' : ''}>−</button>
         <div class="val">${a.trim > 0 ? '+' : ''}${a.trim}</div>
         <button class="secondary" id="adjplus" ${busy || a.trim >= a.trim_range ? 'disabled' : ''}>+</button></div>
+      <div class="row2" style="justify-content:center;align-items:center">
+        <label class="note" for="adjval">Go to trim</label>
+        <input id="adjval" type="number" min="${-a.trim_range}" max="${a.trim_range}" step="1" value="${a.trim}"
+          style="width:80px;font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink)"
+          ${busy ? 'disabled' : ''}>
+        <button class="secondary" id="adjset" ${busy ? 'disabled' : ''}>Set</button></div>
       <div class="row2 note"><span>Trim range ±${a.trim_range} · was ${a.original_trim > 0 ? '+' : ''}${a.original_trim}</span>
         <span>${busy ? '<span class="spinner"></span>moving…' : power}</span></div>
       <div class="actions"><button class="secondary" id="adjcancel" ${busy ? 'disabled' : ''}>Cancel (restore ${a.original_trim > 0 ? '+' : ''}${a.original_trim})</button>
@@ -363,20 +381,65 @@ function adjustDialog(state) {
   on('adjsmaller', () => adjust('shift', +1));
   on('adjminus', () => adjust('trim', -1));
   on('adjplus', () => adjust('trim', +1));
+  const go = () => { const v = parseInt($('#adjval').value, 10); if (!Number.isNaN(v)) adjust('set', 0, v); };
+  on('adjset', go);
+  const box = $('#adjval'); if (box) box.onkeydown = (e) => { if (e.key === 'Enter') go(); };
 }
 let shownAdjust = null;
 function adjustResultDialog(state) {
   const r = state.adjust_result;
-  const key = r && JSON.stringify(r);
+  const key = r && String(r.at);
   if (!r || shownAdjust === key || state.phase !== 'connected') return false;
   shownAdjust = key;
   const msg = r.cancelled ? 'Adjustment cancelled. The previous trim is back and the derailleur is in normal mode.'
+    : r.ok && r.preset ? `Preset applied: rear trim is now ${sign(r.trim)} (was ${sign(r.original)}), confirmed by the derailleur.`
     : r.ok ? `Done. Trim is now ${r.trim > 0 ? '+' : ''}${r.trim} (was ${r.original > 0 ? '+' : ''}${r.original}).`
     : `Stopped: ${esc(r.error)}. The previous trim was restored and the derailleur returned to normal mode.`;
   $('#dialog').innerHTML = `<div class="overlay"><div class="dialog"><h3>Rear derailleur</h3><p>${msg}</p>
     <div class="actions"><span></span><button id="okadj">OK</button></div></div></div>`;
   $('#okadj').onclick = () => { $('#dialog').innerHTML = ''; };
   return true;
+}
+
+// ---- rear trim presets (stored per user on the server: ~/.config/di2/presets.json)
+const sign = (v) => (v > 0 ? '+' : '') + v;
+function presetsBlock(rd) {
+  const list = Object.entries(lastState?.presets || {});
+  const connected = lastState?.phase === 'connected';
+  const rows = list.map(([name, p]) => `<div class="preset"><span class="pname">${esc(name)}
+      ${rd.trim === p.rear_trim ? '<span class="cur">● current</span>' : ''}</span>
+      <span class="pval">${sign(p.rear_trim)}</span>
+      <button class="secondary" data-apply="${esc(name)}" ${connected && rd.trim !== p.rear_trim ? '' : 'disabled'}>Apply</button>
+      <button class="ghost" data-del="${esc(name)}" title="Delete preset" aria-label="Delete ${esc(name)}">×</button></div>`).join('');
+  return `<div class="presets"><h3>Rear trim presets</h3>
+    ${rows || '<div class="note">None yet. Save the current trim to create one.</div>'}
+    <div class="savepreset"><input id="presetname" placeholder="Name, e.g. Trainer" maxlength="40" ${rd.trim == null ? 'disabled' : ''}>
+      <button class="secondary" id="presetsave" ${rd.trim == null ? 'disabled' : ''}>Save ${rd.trim == null ? '' : sign(rd.trim)}</button></div></div>`;
+}
+async function presetCall(body) {
+  const r = await fetch('/api/presets', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if (!r.ok) { const e = await r.json().catch(() => ({})); await confirmBox('Preset not saved', e.error || r.statusText, 'OK'); }
+  lastText = null; refresh();
+}
+function bindPresets() {
+  document.querySelectorAll('[data-apply]').forEach((b) => b.onclick = async () => {
+    const name = b.dataset.apply, p = lastState.presets[name];
+    const rd = byKind(lastState.snapshot, 'rear_derailleur')[0]?.settings || {};
+    if (await confirmBox(`Apply "${name}"?`, `Rear trim ${sign(rd.trim)} → ${sign(p.rear_trim)}. The derailleur moves slightly; pedal gently while it does.`, 'Apply'))
+      adjustPreset(name);
+  });
+  document.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
+    if (await confirmBox(`Delete "${b.dataset.del}"?`, 'This only removes the saved preset; the bike is not changed.', 'Delete'))
+      presetCall({action: 'delete', name: b.dataset.del});
+  });
+  const save = $('#presetsave'), box = $('#presetname');
+  if (save) save.onclick = () => { if (box.value.trim()) presetCall({action: 'save', name: box.value.trim()}); };
+  if (box) box.onkeydown = (e) => { if (e.key === 'Enter' && box.value.trim()) presetCall({action: 'save', name: box.value.trim()}); };
+}
+async function adjustPreset(name) {
+  await fetch('/api/adjust', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: 'preset', name})});
+  refresh();
 }
 
 function batteryCard(snap) {
@@ -420,8 +483,10 @@ function drivetrainCard(snap) {
     <dl class="kv" style="margin-top:10px">
       <dt>Now in</dt><dd>${ring && cog ? `${ring} × ${cog} &nbsp;<span class="sub">ratio ${ratio}</span>` : '—'}</dd>
       <dt>Chainrings</dt><dd>${esc(fd.chainrings)}</dd><dt>Cassette</dt><dd>${esc(rd.cassette)}</dd>
+      <dt>Rear trim</dt><dd>${rd.trim == null ? '—' : `${rd.trim > 0 ? '+' : ''}${rd.trim} <span class="sub">(range ±${rd.trim_range})</span>`}</dd>
     </dl>${lastState?.phase === 'connected' && byKind(snap, 'rear_derailleur')[0]?.responding
-      ? '<button class="secondary" id="adjrd" style="margin-top:14px">Rear derailleur adjustment…</button>' : ''}</section>`;
+      ? '<button class="secondary" id="adjrd" style="margin-top:14px">Rear derailleur adjustment…</button>' : ''}
+    ${presetsBlock(rd)}</section>`;
 }
 
 function synchroRow(entry, cogs, label, slot, editKey) {
@@ -545,6 +610,8 @@ function render(state) {
   if (phase === 'disconnected') staged = {};
   pendingBar();
   const a = $('#adjrd'); if (a) a.onclick = () => adjust('begin');
+  bindPresets();
+  if (phase !== 'adjusting' && $('#dialog .adjust')) $('#dialog').innerHTML = '';   // adjustment ended
   if (phase === 'adjusting') adjustDialog(state);
   else if (!reportDialog(state) && !adjustResultDialog(state)) dialogs(state);
 }

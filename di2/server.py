@@ -12,7 +12,11 @@ POST /api/disconnect   E-Tube's disconnect (PC link off on every unit, BCR2 rese
 POST /api/cancel   cancel a connect in progress (it disconnects cleanly)
 POST /api/check    {changes: [...]} -> errors, warnings, what would be written (no bike traffic)
 POST /api/apply    {changes: [...]} back up all settings, write, read each change back
-POST /api/adjust   {action: begin|start|shift|trim|finish|cancel, delta: +1|-1}
+GET  /api/presets  saved rear-trim presets (per user, see di2/presets.py)
+POST /api/presets  {action: save, name[, value]} (value defaults to the current trim)
+                   or {action: delete, name}
+POST /api/adjust   {action: begin|start|shift|trim|set|finish|cancel, delta, value}
+                   or {action: preset, name}: apply a saved trim
                    rear derailleur adjustment (phase 'adjusting' blocks everything else)
 GET  /api/link     BCR2 status (USB, bike battery, bus state); only while disconnected
 
@@ -29,7 +33,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import edit, settings
+from . import edit, presets, settings
 from .adjust import RearAdjust
 from .session import Di2Error
 from .scan import scan
@@ -98,7 +102,8 @@ class Bike:
                     'options': {str(k): {f: {str(v): lbl for v, lbl in vals.items()} for f, vals in fields.items()}
                                 for k, fields in opts.items()},
                     'apply_report': self.apply_report,
-                    'adjust': self.adjust, 'adjust_result': self.adjust_result}
+                    'adjust': self.adjust, 'adjust_result': self.adjust_result,
+                    'presets': presets.load()}
 
     def check(self, changes: list) -> dict:
         with self.lock:
@@ -116,18 +121,18 @@ class Bike:
         self._jobs.put('apply')
         return True
 
-    def request_adjust(self, action: str, delta: int = 0) -> bool:
+    def request_adjust(self, action: str, delta: int = 0, value: int = 0) -> bool:
         with self.lock:
-            if action == 'begin':
+            if action in ('begin', 'preset'):
                 if self.phase != 'connected':
                     return False
                 self.phase, self.error, self.adjust_result = 'adjusting', None, None
-                self.adjust = {'stage': 'preparing', 'busy': True}
+                self.adjust = {'stage': 'preparing' if action == 'begin' else 'preset', 'busy': True}
             elif self.phase != 'adjusting' or not self.adjust or self.adjust.get('busy'):
                 return False
             else:
                 self.adjust['busy'] = True
-        self._jobs.put(('adjust', action, delta))
+        self._jobs.put(('adjust', action, delta, value))
         return True
 
     def link(self) -> dict:
@@ -229,20 +234,28 @@ class Bike:
             self.last_activity = time.time()
         self._progress_quiet('settings written and verified' if ok else 'some settings did not verify')
 
-    def _do_adjust(self, action: str, delta: int) -> None:
+    def _do_adjust(self, action: str, delta: int, value: int = 0) -> None:
         try:
-            if action == 'begin':
+            if action in ('begin', 'preset'):
                 snap = self.snapshot
                 rd = next(u for u in snap['units'] if u.get('kind') == 'rear_derailleur' and u.get('responding'))
                 fd = next((u for u in snap['units'] if u.get('kind') == 'front_derailleur' and u.get('responding')), None)
-                self.adjuster = RearAdjust(self.session, rd['slot'], fd and fd['slot'])
+                self.adjuster = RearAdjust(self.session, rd['slot'], fd and fd['slot'], log=self._progress_quiet)
                 st, stage = self.adjuster.prepare(), 'ready'
                 self._progress_quiet(f'rear adjust: gear {st["gear"]}/{st["max_gear"]}, trim {st["trim"]}')
+                if action == 'preset':
+                    self._progress_quiet(f'rear trim preset: {st["trim"]} -> {value}')
+                    st = self.adjuster.apply_trim(value)
+                    self._end_adjust({'ok': True, 'trim': st['trim'], 'original': st['original_trim'], 'preset': True})
+                    return
             elif action == 'start':
                 self._progress_quiet('rear adjust: shifting to the start position')
                 st, stage = self.adjuster.start(), 'adjusting'
             elif action in ('shift', 'trim'):
                 st, stage = getattr(self.adjuster, action)(delta), 'adjusting'
+                self._progress_quiet(f'rear adjust: gear {st["gear"]}, trim {st["trim"]}')
+            elif action == 'set':
+                st, stage = self.adjuster.set_trim(value), 'adjusting'
                 self._progress_quiet(f'rear adjust: gear {st["gear"]}, trim {st["trim"]}')
             elif action == 'finish':
                 st = self.adjuster.finish()
@@ -266,8 +279,15 @@ class Bike:
             self._end_adjust({'ok': False, 'error': msg})
 
     def _end_adjust(self, result: dict) -> None:
+        trim = self.adjuster.trim_value if self.adjuster else None
         with self.lock:
-            self.phase, self.adjuster, self.adjust, self.adjust_result = 'connected', None, None, result
+            if trim is not None and self.snapshot:
+                for u in self.snapshot['units']:
+                    if u.get('kind') == 'rear_derailleur' and u.get('settings') is not None:
+                        u['settings']['trim'] = trim
+                CACHE.write_text(json.dumps(self.snapshot, indent=1))
+            self.phase, self.adjuster, self.adjust = 'connected', None, None
+            self.adjust_result = {**result, 'at': time.time()}
             self.last_activity = time.time()
         self._progress_quiet('rear adjust: ' + ('cancelled' if result.get('cancelled') else
                                                 'done' if result['ok'] else 'stopped: ' + result['error']))
@@ -351,6 +371,8 @@ def make_handler(bike: Bike):
                 self._send(200, (WEB / 'index.html').read_bytes(), 'text/html; charset=utf-8')
             elif self.path == '/api/state':
                 self._send(200, json.dumps(bike.state()).encode())
+            elif self.path == '/api/presets':
+                self._send(200, json.dumps(presets.load()).encode())
             elif self.path == '/api/link':
                 self._send(200, json.dumps(bike.link()).encode())
             else:
@@ -374,13 +396,35 @@ def make_handler(bike: Bike):
                 else:
                     ok = bike.request_apply(changes)
                     self._send(202 if ok else 409, json.dumps(bike.state()).encode())
+            elif action == 'presets':
+                body = self._body()
+                try:
+                    if body.get('action') == 'delete':
+                        data = presets.delete(str(body.get('name', '')))
+                    else:
+                        snap = bike.state()['snapshot'] or {'units': []}
+                        rd = next((u for u in snap['units'] if u.get('kind') == 'rear_derailleur'), None)
+                        value = body.get('value', ((rd or {}).get('settings') or {}).get('trim'))
+                        if value is None:
+                            raise ValueError('no rear trim known yet; connect first')
+                        data = presets.save(str(body.get('name', '')), int(value), rd, str(body.get('note', '')))
+                    self._send(200, json.dumps(data).encode())
+                except (ValueError, TypeError) as e:
+                    self._send(400, json.dumps({'error': str(e)}).encode())
             elif action == 'adjust':
                 body = self._body()
                 act, delta = str(body.get('action', '')), int(body.get('delta', 0) or 0)
-                if act not in ('begin', 'start', 'shift', 'trim', 'finish', 'cancel'):
+                value = int(body.get('value', 0) or 0)
+                if act == 'preset':
+                    saved = presets.load().get(str(body.get('name', '')))
+                    if not saved:
+                        self._send(404, b'{"error": "no such preset"}')
+                        return
+                    value = saved['rear_trim']
+                if act not in ('begin', 'start', 'shift', 'trim', 'set', 'finish', 'cancel', 'preset'):
                     self._send(400, b'{"error": "bad action"}')
                     return
-                ok = bike.request_adjust(act, delta)
+                ok = bike.request_adjust(act, delta, value)
                 self._send(202 if ok else 409, json.dumps(bike.state()).encode())
             elif action in ('connect', 'refresh', 'disconnect', 'cancel'):
                 ok = bike.request(action)

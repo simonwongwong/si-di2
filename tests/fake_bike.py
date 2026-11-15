@@ -42,9 +42,9 @@ class FakeBike:
             (0x0B, 0x7C): lambda: bytes(v['gpc']),
             (0x0B, 0x64): lambda: bytes([v['limit']] * 4),
             (0x0B, 0x14): lambda: bytes([v['trim'] & 0xFF, v['trim_range']]),
-            (0x26, 0x44): lambda: bytes([v['soc']]),
+            (0x26, 0x44): (lambda: bytes([v['soc']])) if v['soc'] is not None else None,
         }
-        if g in replies:
+        if g in replies and replies[g] is not None:
             return 'ok', replies[g]()
         if g == (0x04, 0x10):
             sw[:] = [p[0], p[1]]
@@ -57,11 +57,13 @@ class FakeBike:
         elif g == (0x0B, 0x60):
             v['limit'] = p[0]
         elif g == (0x0B, 0x08):
+            previous = v['rd_gear'][0]               # like the real RD: replies before it has moved
             v['rd_gear'][0] = p[0]
-            return 'ok', bytes([p[0]])
+            return 'ok', bytes([previous])
         elif g == (0x0B, 0x10):
+            previous = v['trim']                     # like the real RD: reply with the old value
             v['trim'] = p[0] - 256 if p[0] > 127 else p[0]
-            return 'ok', bytes([p[0]])
+            return 'ok', bytes([previous & 0xFF])
         elif g == (0x0B, 0x00):
             v['mode'] = p[0]
         else:
@@ -83,8 +85,13 @@ class FakeSession:
     def unit(self, *a, **k):
         return self.bike.unit(*a, **k)
 
+    capacitor = [2656]          # successive 1C readings; the last one repeats
+
     def command(self, ctrl, data=b'', wait=2.0):
-        return bytes([0x60, 0x0A]) if ctrl == 0x1C else None    # capacitor level 2656
+        if ctrl != 0x1C:
+            return None
+        level = self.capacitor.pop(0) if len(self.capacitor) > 1 else self.capacitor[0]
+        return None if level is None else bytes([level & 0xFF, level >> 8])
 
     def close(self):
         self.close_report = {0: True}

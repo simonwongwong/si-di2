@@ -11,9 +11,9 @@ Picking this up later (or contributing)? Start here. Read
    multi-shift speed (including off, which must also force the gear limit to
    unlimited), gear limit, semi-synchro steps. Do one at a time and check the
    read-back.
-3. **Rear derailleur adjustment.** Bike on a stand, turn the cranks: Start, one trim
-   step up, one down, Done. Then try Cancel and check the trim and normal shifting
-   come back.
+3. **Applying a rear trim preset on a bike.** Presets skip the shift to gear 5 that
+   the full adjustment does (the trim is the same in every gear): adjust mode, jump,
+   read back, normal mode. Verify that on a real derailleur.
 4. **`python -m di2 errors`** (failure history / last error code per unit).
 
 ## Features

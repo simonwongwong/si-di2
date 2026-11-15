@@ -5,9 +5,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from di2 import adjust, edit, framing, settings  # noqa: E402
+from di2 import adjust, edit, framing, presets, settings  # noqa: E402
 from di2.session import forbidden  # noqa: E402
 from fake_bike import FakeBike, FakeSession, load_snapshot  # noqa: E402
+
+adjust.time.sleep = lambda s: None          # no real waits in tests
 
 RD, FD, LEFT = 4, 11, 19          # slots in the fixture snapshot
 
@@ -92,6 +94,16 @@ class Adjust(unittest.TestCase):
         fd_shifts = [p[0] for slot, g, c, p in s.bike.sent if slot == FD and (g, c) == (0x0B, 0x08)]
         self.assertEqual(fd_shifts, [5, 6])          # every rear shift mirrored to the FD
 
+    def test_set_trim_jumps_and_clamps(self):
+        s = FakeSession()
+        a = adjust.RearAdjust(s, RD, FD)
+        a.prepare()
+        a.start()
+        a.set_trim(-3)
+        self.assertEqual(s.bike.v['trim'], -3)
+        a.set_trim(99)
+        self.assertEqual(s.bike.v['trim'], s.bike.v['trim_range'])
+
     def test_finish_keeps_trim(self):
         s = FakeSession()
         a = adjust.RearAdjust(s, RD, FD)
@@ -110,12 +122,56 @@ class Adjust(unittest.TestCase):
             a.trim(+1)
         self.assertEqual(s.bike.v['trim'], s.bike.v['trim_range'])
 
-    def test_low_capacitor_stops_shifting(self):
+    def test_battery_answering_wins_over_bcr2_power_state(self):
         s = FakeSession()
-        s.battery_present = False                     # BCR2 powers the bus; capacitor reads 2656
+        s.battery_present = False                     # BCR2 says no battery, but it answers 100 %
+        s.bike.v['soc'] = 100
+        s.capacitor = [None]
         a = adjust.RearAdjust(s, RD, FD)
+        a.prepare()
+        self.assertEqual(a.power(), {'source': 'battery', 'level': 100})
+
+    def test_waits_for_capacitor_to_recharge(self):
+        s = FakeSession()
+        s.battery_present = False                     # BCR2 powers the bus, no battery
+        s.bike.v['soc'] = None
+        s.capacitor = [2600, 2640, 2700]              # recharging
+        a = adjust.RearAdjust(s, RD, FD)
+        a.charge_interval = 0
+        self.assertEqual(a.prepare()['gear'], 3)
+
+    def test_gives_up_if_capacitor_never_recharges(self):
+        s = FakeSession()
+        s.battery_present = False
+        s.bike.v['soc'] = None
+        s.capacitor = [2600]
+        a = adjust.RearAdjust(s, RD, FD)
+        a.charge_interval, a.charge_polls = 0, 3
         with self.assertRaises(Exception):
             a.prepare()
+
+
+class Presets(unittest.TestCase):
+    def setUp(self):
+        import os, tempfile
+        self.dir = tempfile.mkdtemp()
+        os.environ['DI2_PRESETS'] = os.path.join(self.dir, 'presets.json')
+
+    def test_save_load_delete(self):
+        rd = {'model': 'RD-R8050-GS', 'serial': '000000000002', 'settings': {'trim_range': 16}}
+        presets.save('Wheel', 4, rd)
+        presets.save('Trainer', 0, rd)
+        self.assertEqual({k: v['rear_trim'] for k, v in presets.load().items()}, {'Wheel': 4, 'Trainer': 0})
+        presets.delete('Wheel')
+        self.assertEqual(list(presets.load()), ['Trainer'])
+
+    def test_apply_trim_sets_and_leaves_adjust_mode_without_shifting(self):
+        s = FakeSession()
+        a = adjust.RearAdjust(s, RD, FD)
+        a.prepare()
+        a.apply_trim(-2)
+        self.assertEqual((s.bike.v['trim'], s.bike.v['mode'], s.bike.v['rd_gear'][0]), (-2, 0, 3))
+        self.assertFalse(any((g, c) == (0x0B, 0x08) for _, g, c, _ in s.bike.sent))
 
 
 class Settings(unittest.TestCase):
@@ -127,6 +183,7 @@ class Settings(unittest.TestCase):
         self.assertEqual(fd['synchro mode 2 up']['rd_shift_point'], 7)
         rd = settings.rear_derailleur(s, RD, gs=True)
         self.assertEqual((rd['cassette'], rd['multi_shift_speed']), ('11-28', 'normal'))
+        self.assertEqual((rd['trim'], rd['trim_range']), (0, 4))
 
 
 if __name__ == '__main__':

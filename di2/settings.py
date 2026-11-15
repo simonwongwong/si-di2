@@ -82,6 +82,9 @@ def rear_derailleur(s: Session, slot: int, gs: bool) -> Dict:
     p = _read(s, slot, 0x0B, 0x54)
     out['multi_shift_speed'] = MULTI_SHIFT_SPEED.get(p[0], p[0]) if p else None
     out['multi_shift_speed_code'] = p[0] if p else None
+    p = _read(s, slot, 0x0B, 0x14)              # EXTM_RA_ADJ_LV_GET: trim (int8), +/- range
+    out['trim'] = (p[0] - 256 if p[0] > 127 else p[0]) if p and len(p) >= 2 else None
+    out['trim_range'] = p[1] if p and len(p) >= 2 else None
     p = _read(s, slot, 0x0B, 0x7C, bytes([1, 2, 0, 0]))
     out['gear_position_control'] = None if not p else ('off' if p[:4] == bytes([1, 2, 0xFF, 0]) else 'on')
     out['gear_position_control_raw'] = p.hex(' ') if p else None

@@ -22,7 +22,8 @@ wireless unit) with an SM-BCR2.
 | battery level | works |
 | read all customize settings (buttons, synchro maps, multi-shift, chainrings/cassette, wireless) | works |
 | write settings, with backup and read-back verification | works for synchro shift speed; other settings (buttons, multi-shift, semi-synchro steps) implemented, not yet tried on a bike |
-| rear derailleur adjustment | implemented, tested against a simulated bike only |
+| rear derailleur adjustment (steps, typed value, Done/Cancel) | works |
+| rear trim presets (e.g. wheel vs. trainer), saved per user | works in the simulator; applying on a bike not yet tried |
 | full-synchro shift points, chainring/cassette, wireless mode, restore from backup, front derailleur adjustment | not yet ([WHATS-NEXT.md](WHATS-NEXT.md)) |
 | firmware updates, error check | not planned; the library refuses update/bootloader commands |
 
@@ -32,7 +33,8 @@ wireless unit) with an SM-BCR2.
   and a command line (`python -m di2 status | settings | errors | release | serve`).
 * `di2/web/`: a local web UI (`python -m di2 serve`): Connect / Disconnect with
   E-Tube's warnings, settings editing with a backup before every write and a
-  read-back after it, rear derailleur adjustment.
+  read-back after it, rear derailleur adjustment, and named rear trim presets
+  (stored in `~/.config/di2/presets.json`; none are shipped).
 * `docs/`:
   * [protocol.md](docs/protocol.md): USB, framing, the SM-BCR2's commands, the
     connect/disconnect sequence, PC link mode.

@@ -2,10 +2,11 @@
 """Run the web UI against the simulated bike (tests/fake_bike.py): no SM-BCR2 needed.
 
 usage: python3 tools/sim_server.py [--port 8097]
-Settings and backups go to a temporary directory, not ~/.cache/di2.
+Settings, backups and presets go to a temporary directory, not your real files.
 """
 import argparse
 import json
+import os
 import sys
 import tempfile
 import time
@@ -49,6 +50,7 @@ def main() -> None:
     ap.add_argument('--port', type=int, default=8097)
     args = ap.parse_args()
     tmp = Path(tempfile.mkdtemp(prefix='di2-sim-'))
+    os.environ['DI2_PRESETS'] = str(tmp / 'presets.json')     # never touch the real presets
     srv.Session, srv.scan = SimSession, sim_scan
     srv.CACHE, srv.BACKUPS = tmp / 'last.json', tmp / 'backups'
     srv.CACHE.write_text(json.dumps(load_snapshot()))

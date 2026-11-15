@@ -122,8 +122,24 @@ at the USB end.
 * The battery can tell you what's registered in a slot (`02 14 slot`) even when
   that unit doesn't answer, which is how we confirmed the silent slot was the
   wireless unit.
+* **Derailleurs answer before they move.** The reply to a trim set (`0B 10`) or a
+  shift (`0B 08`) carries the value *before* the change; the derailleur moves
+  afterwards. Matching the reply against the target made every trim step down
+  and every multi-gear shift look like a failure, and quick retries raced the
+  motor. Send once, then read back (`0B 14`, `0B 0C`) until it shows the target.
+* The rear trim is one value for the whole derailleur (range ±16 on RD-R8050),
+  not one per gear.
 * E-Tube's preset files are encrypted with a key embedded in the app; we don't
   use or publish it.
+
+## Power check before moving a derailleur
+
+E-Tube decides between battery % and the SM-BCR2's capacitor from the power
+check (`1A 02`). On our bike that check said "no battery" while the battery
+answered its charge request (`26 44`, 100 %), and the SM-BCR2 then didn't
+answer the capacitor query (`1C`). Trust the battery when it answers. If the
+capacitor really is the source, E-Tube doesn't command anything to recharge
+it: it re-reads every 3 s for up to ~90 s while the SM-BCR2 recharges from USB.
 
 ## Things E-Tube does that we deliberately don't copy
 

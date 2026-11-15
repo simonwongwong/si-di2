@@ -6,15 +6,18 @@ The derailleur moves, so the rider must have the rear wheel free and turn the cr
   start()    shift to gear 5 (E-Tube's start position), enter adjust mode (0B 00 01)
   shift(d)   one gear at a time; gear 1 is the largest cog
   trim(d)    one step at a time; each value is stored on the derailleur immediately
+  set_trim(v) jump straight to a value within the range
+  apply_trim(v) for presets: adjust mode, jump to v, leave adjust mode (no shifting)
   finish()   leave adjust mode (0B 00 00); the new trim stays
   cancel()   put the original trim back and leave adjust mode (E-Tube's cancel does
              the first but not the second)
 
 Every shift is mirrored to the front derailleur (E-Tube's SendRearShiftToFD), and
-power is checked first: battery % (> 4) if the bike's battery feeds the bus, else
-the SM-BCR2's capacitor (>= 2659, PCE 1C).
+power is checked first: the battery's charge (> 4 %) when it answers, else the
+SM-BCR2's capacitor (>= 2659, PCE 1C), waiting up to ~90 s for it to recharge.
 """
-from typing import Dict, Optional
+import time
+from typing import Callable, Dict, Optional
 
 from .session import Di2Error, Session
 
@@ -23,8 +26,11 @@ CAPACITOR_MIN = 2659
 
 
 class RearAdjust:
-    def __init__(self, s: Session, rd_slot: int, fd_slot: Optional[int], master_slot: int = 0):
-        self.s, self.rd, self.fd, self.master = s, rd_slot, fd_slot, master_slot
+    charge_polls, charge_interval = 30, 3.0      # E-Tube's capacitor wait (~90 s)
+
+    def __init__(self, s: Session, rd_slot: int, fd_slot: Optional[int], master_slot: int = 0,
+                 log: Callable[[str], None] = lambda msg: None):
+        self.s, self.rd, self.fd, self.master, self.log = s, rd_slot, fd_slot, master_slot, log
         self.gear = self.max_gear = None
         self.trim_value = self.trim_range = self.original_trim = None
         self.in_adjust_mode = False
@@ -45,11 +51,19 @@ class RearAdjust:
         self.trim_range = p[1]
 
     def power(self) -> Dict:
-        """Battery % when the bike's battery feeds the bus, else the BCR2 capacitor level."""
-        if self.s.battery_present:
-            st, p = self.s.unit(self.master, 0x26, 0x44)
-            return {'source': 'battery', 'level': p[0] if st == 'ok' and p else None}
+        """The battery's own charge if it answers, else the SM-BCR2's capacitor level.
+
+        E-Tube picks by the SM-BCR2's power check (1A 02), but on our bike that check
+        sometimes reports no battery while the battery answers MBT_SOC2_GET fine (and
+        the SM-BCR2 then doesn't answer the capacitor query, 1C). A battery that reports
+        its charge is on the bus, so trust it first.
+        """
+        st, p = self.s.unit(self.master, 0x26, 0x44)
+        if st == 'ok' and p and p[0] <= 100:
+            return {'source': 'battery', 'level': p[0]}
         r = self.s.command(0x1C)
+        if not r or len(r) < 2:
+            self.log(f'no battery level ({st}) and no SM-BCR2 capacitor reading ({r!r})')
         return {'source': 'capacitor', 'level': (r[0] | r[1] << 8) if r and len(r) >= 2 else None}
 
     def _check_power(self, battery_min: int) -> None:
@@ -58,8 +72,17 @@ class RearAdjust:
             raise Di2Error('could not read the power level')
         if pw['source'] == 'battery' and pw['level'] < battery_min:
             raise Di2Error(f'battery at {pw["level"]} %: charge it before adjusting (needs {battery_min} %)')
-        if pw['source'] == 'capacitor' and pw['level'] < CAPACITOR_MIN:
-            raise Di2Error('the SM-BCR2 capacitor is low; leave it connected a minute and try again')
+        if pw['source'] == 'capacitor':
+            # ErrorCheckUnitFDRDCharge.ChargeTask: nothing is sent to charge; the SM-BCR2
+            # recharges from USB. E-Tube re-reads every 3 s, up to 30 times.
+            for _ in range(self.charge_polls):
+                if pw['level'] is not None and pw['level'] >= CAPACITOR_MIN:
+                    return
+                self.log(f'waiting for the SM-BCR2 capacitor to recharge ({pw["level"]}/{CAPACITOR_MIN})')
+                time.sleep(self.charge_interval)
+                pw = self.power()
+            if pw['level'] is None or pw['level'] < CAPACITOR_MIN:
+                raise Di2Error('the SM-BCR2 capacitor did not recharge; replug its USB cable and try again')
 
     def state(self) -> Dict:
         return {'gear': self.gear, 'max_gear': self.max_gear, 'trim': self.trim_value,
@@ -76,24 +99,35 @@ class RearAdjust:
         return self.state()
 
     def _send_gear(self, slot: int, gear: int) -> None:
-        """EXTM_RA_SFT_LV_SET: reply must echo the target gear (2 retries, +1 after an error reply)."""
-        for _ in range(4):
-            st, p = self.s.unit(slot, 0x0B, 0x08, bytes([gear, self.max_gear, 0, 0]))
-            if st == 'ok' and p and p[0] == gear:
-                return
-        raise Di2Error(f'slot {slot} did not confirm the shift to gear {gear}')
+        """EXTM_RA_SFT_LV_SET to one unit. The reply isn't trusted (see _go_to)."""
+        st, p = self.s.unit(slot, 0x0B, 0x08, bytes([gear, self.max_gear, 0, 0]))
+        self.log(f'gear {gear} -> slot {slot}: {st}, reply {p.hex(" ") if p else "-"}')
+        if st not in ('ok', 'error'):
+            raise Di2Error(f'slot {slot} did not answer the shift to gear {gear} ({st})')
 
     def _go_to(self, gear: int) -> None:
+        """Shift, then read the gear back until the derailleur reports it.
+
+        Like the trim, the derailleur answers before it has finished moving, so a
+        multi-gear move (e.g. 11 -> 5) didn't echo the target. Send once (and mirror it
+        to the FD, E-Tube's SendRearShiftToFD), poll EXTM_RA_SFT_LV_GET for up to ~5 s,
+        resend once if it still isn't there.
+        """
         self._check_power(5)                     # per shift E-Tube needs > 4 %
         if gear == self.gear:
             return
-        self._send_gear(self.rd, gear)
-        if self.fd is not None:
-            self._send_gear(self.fd, gear)       # tell the FD the rear position
-        for _ in range(5):                       # E-Tube re-reads until the RD reports it
-            self._read_gear()
-            if self.gear == gear:
-                return
+        for send in range(2):
+            self._send_gear(self.rd, gear)
+            if self.fd is not None:
+                self._send_gear(self.fd, gear)   # tell the FD the rear position
+            for _ in range(17):                  # ~5 s
+                time.sleep(0.3)
+                try:
+                    self._read_gear()
+                except Di2Error:
+                    continue
+                if self.gear == gear:
+                    return
         raise Di2Error(f'the rear derailleur reports gear {self.gear}, expected {gear}')
 
     def _set_mode(self, mode: int) -> None:
@@ -114,13 +148,56 @@ class RearAdjust:
         return self.state()
 
     def _send_trim(self, value: int) -> None:
-        """EXTM_RA_ADJ_LV_SET. E-Tube's rear wizard passes the gear count as the second byte."""
-        for _ in range(3):
+        """EXTM_RA_ADJ_LV_SET, then read the trim back until it shows the new value.
+
+        The derailleur answers the set with its *previous* trim and moves afterwards
+        (seen on the bike: asked for 3 at 4, it replied 04 three times, then 03), so the
+        reply can't confirm anything. Send once, then poll EXTM_RA_ADJ_LV_GET (0B 14);
+        resend once only if the read-back still disagrees. E-Tube's rear wizard passes
+        the gear count as the second byte; we do the same.
+        """
+        seen = []
+        for send in range(2):
             st, p = self.s.unit(self.rd, 0x0B, 0x10, bytes([value & 0xFF, self.max_gear]))
-            if st == 'ok' and p and p[0] == value & 0xFF:
-                self.trim_value = value
-                return
-        raise Di2Error(f'the rear derailleur did not confirm trim {value}')
+            self.log(f'trim {value}: sent ({st}, reply {p.hex(" ") if p else "-"})')
+            if st != 'ok':
+                seen.append(f'set {st}')
+                continue
+            for _ in range(10):                       # up to ~3 s
+                time.sleep(0.3)
+                self._read_trim_quietly()
+                seen.append(str(self.trim_value))
+                if self.trim_value == value:
+                    self.log(f'trim {value}: confirmed by read-back')
+                    return
+        raise Di2Error(f'the rear derailleur did not move to trim {value} (read back: {", ".join(seen[-5:])})')
+
+    def _read_trim_quietly(self) -> None:
+        try:
+            self._read_trim()
+        except Di2Error:
+            pass
+
+    def set_trim(self, value: int) -> Dict:
+        """Go straight to a trim value (clamped to the derailleur's range)."""
+        value = max(-self.trim_range, min(self.trim_range, int(value)))
+        if value != self.trim_value:
+            self._send_trim(value)
+        return self.state()
+
+    def apply_trim(self, value: int) -> Dict:
+        """Set a saved trim without the full procedure: adjust mode, jump, leave adjust mode.
+
+        The trim is the same in every gear, so unlike start() this doesn't shift to
+        gear 5 first; the only movement is the trim change itself. Call prepare() first.
+        """
+        self._check_power(5)
+        self._set_mode(1)
+        try:
+            self.set_trim(value)
+        finally:
+            self._set_mode(0)
+        return self.state()
 
     def trim(self, delta: int) -> Dict:
         target = self.trim_value + (1 if delta > 0 else -1)
